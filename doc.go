@@ -1,20 +1,20 @@
 // Package sglog provides a log/slog logging handler that writes to multiple
-// files based on the severity similar to the Google's glog package.
+// log files based on the log severity -- similar to the Google's glog package.
 //
-// Most of the code is copied or derived from the Google glog package for Go
-// however, there are some differences when compared to the original glog
-// package.
+// Most of the code is copied from the Google's glog package for Go. However,
+// there are some differences and a new log file reuse feature.
 //
 // # DIFFERENCES
 //
-//   - The standard log/slog package doesn't offer support for FATAL messages, so
-//     they are not supported by this package as well.
+//   - The standard log/slog package doesn't define Fatal level and log.Fatalf
+//     is treated as LevelInfo, so FATAL log files are not supported by this
+//     package.
 //
 //   - Globally defined flags are replaced with an Options structure.
 //
 //   - Thread-ID field in the log file names is always set to zero to enable
-//     log file reuse. Thread-ID is still included in the individual log
-//     messages, even though it is not very useful in Go.
+//     log file reuse across restarts. Thread-ID is still included in the
+//     individual log messages, even though it is not very useful in Go.
 //
 //   - Google's glog package adds a footer message when a log file is rotated,
 //     which is not supported in this package.
@@ -23,19 +23,16 @@
 //     exactly match the log file creation time. However, timestamps in the log
 //     file names still follow the sorted order.
 //
-// # REUSING LOG FILE NAMES
+// # LOG FILE REUSE
 //
-// Google's glog creates a new log file every time the process restarts. This
-// can exhaust filesystem inodes when the process is crashing repeatedly. This
-// package enables log file reuse with a certain timeout (eg: maximum one log
-// file per hour, etc.)
+// Google's glog package creates a new log file every time the process is
+// restarted. This can exhaust filesystem inodes if the process is crashing
+// repeatedly.
 //
-// While the reuse timeout option limits number of log files created by time
-// duration, this package also rotates the log file when the log file reaches
-// the maximum size limit. Timestamps for the log files are chosen to allow for
-// identifying the last used log file quickly.
+// This package changes the above behavior and enables log file reuse with a
+// certain timeout (ex: maximum one log file per hour.) As part of this,
+// thread-id field in the log file name is replaced with a zero.
 //
-// As part of implementing the above feature, we need to remove thread-id from
-// the log file name. Since thread-id is not meaningful with Go runtime anyway,
-// we decided to replace thread-id in the log file name with a zero.
+// Note that log file is still rotated when the file size reaches up to the
+// maximum limit.
 package sglog

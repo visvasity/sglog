@@ -13,30 +13,33 @@ import (
 	"time"
 )
 
+// NOTE: Most of the following code is copied from the example
+// slog-handler-guide.
+
 // groupOrAttrs holds either a group name or a list of slog.Attrs.
 type groupOrAttrs struct {
 	group string      // group name if non-empty
 	attrs []slog.Attr // attrs if non-empty
 }
 
-type emitter = func(slog.Level, []byte) error
+type slogHandler struct {
+	// mu is a pointer cause it is shared by all copies of the Handler created
+	// for different groups and attributes.
+	mu *sync.Mutex
 
-type Handler struct {
-	opts *Options
+	backend *Backend
+
 	goas []groupOrAttrs
-	mu   *sync.Mutex
-	emit emitter
 }
 
-func newHandler(opts *Options, emit emitter) *Handler {
-	return &Handler{
-		opts: opts,
-		mu:   new(sync.Mutex),
-		emit: emit,
+func (v *Backend) newHandler(opts *Options) *slogHandler {
+	return &slogHandler{
+		backend: v,
+		mu:      new(sync.Mutex),
 	}
 }
 
-func (h *Handler) withGroupOrAttrs(goa groupOrAttrs) *Handler {
+func (h *slogHandler) withGroupOrAttrs(goa groupOrAttrs) *slogHandler {
 	h2 := *h
 	h2.goas = make([]groupOrAttrs, len(h.goas)+1)
 	copy(h2.goas, h.goas)
@@ -44,25 +47,29 @@ func (h *Handler) withGroupOrAttrs(goa groupOrAttrs) *Handler {
 	return &h2
 }
 
-func (h *Handler) WithGroup(name string) slog.Handler {
+// WithGroup implements the WithGroup method for slog.Handler interface.
+func (h *slogHandler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h
 	}
 	return h.withGroupOrAttrs(groupOrAttrs{group: name})
 }
 
-func (h *Handler) WithAttrs(attrs []slog.Attr) slog.Handler {
+// WithAttrs implements the WithAttrs method for slog.Handler interface.
+func (h *slogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if len(attrs) == 0 {
 		return h
 	}
 	return h.withGroupOrAttrs(groupOrAttrs{attrs: attrs})
 }
 
-func (h *Handler) Enabled(ctx context.Context, level slog.Level) bool {
-	return level >= slog.LevelDebug
+// Enabled implements the Enabled method for slog.Handler interface.
+func (h *slogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= h.backend.currentLevel.Level()
 }
 
-func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
+// Handle implements the Handle method for slog.Handler interface.
+func (h *slogHandler) Handle(ctx context.Context, r slog.Record) error {
 	bufi := bufs.Get()
 	var buf *bytes.Buffer
 	if bufi == nil {
@@ -75,13 +82,13 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 	defer bufs.Put(bufi)
 
 	h.format(ctx, buf, r)
-	return h.emit(r.Level, buf.Bytes())
+	return h.backend.emit(r.Level, buf.Bytes())
 }
 
 // bufs is a pool of *bytes.Buffer used in formatting log entries.
 var bufs sync.Pool // Pool of *bytes.Buffer.
 
-func (h *Handler) format(ctx context.Context, buf *bytes.Buffer, r slog.Record) {
+func (h *slogHandler) format(ctx context.Context, buf *bytes.Buffer, r slog.Record) {
 
 	// Lmmdd hh:mm:ss.uuuuuu PID/GID file:line]
 	//
@@ -100,6 +107,7 @@ func (h *Handler) format(ctx context.Context, buf *bytes.Buffer, r slog.Record) 
 	default:
 		buf.WriteByte(byte('I'))
 	}
+
 	_, month, day := r.Time.Date()
 	hour, minute, second := r.Time.Clock()
 	twoDigits(buf, int(month))
@@ -164,8 +172,8 @@ func (h *Handler) format(ctx context.Context, buf *bytes.Buffer, r slog.Record) 
 		return true
 	})
 
-	if buf.Len() > h.opts.MaxLogMessageLen-1 {
-		buf.Truncate(h.opts.MaxLogMessageLen - 1)
+	if buf.Len() > h.backend.opts.LogMessageMaxLen-1 {
+		buf.Truncate(h.backend.opts.LogMessageMaxLen - 1)
 	}
 	if b := buf.Bytes(); b[len(b)-1] != '\n' {
 		buf.WriteByte('\n')
@@ -199,7 +207,7 @@ func nDigits(buf *bytes.Buffer, n int, d uint64, pad byte) {
 	buf.Write(tmp[j:])
 }
 
-func (h *Handler) appendAttr(buf *bytes.Buffer, a slog.Attr, prefix string) {
+func (h *slogHandler) appendAttr(buf *bytes.Buffer, a slog.Attr, prefix string) {
 	// Resolve the Attr's value before doing anything else.
 	a.Value = a.Value.Resolve()
 	// Ignore empty Attrs.

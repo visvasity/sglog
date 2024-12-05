@@ -10,14 +10,14 @@ type Options struct {
 	// LogDirs if non-empty write log files in this directory.
 	LogDirs []string
 
-	// LogLink if non-empty, adds symbolic links in this directory to the log
+	// LogLinkDir if non-empty, adds symbolic links in this directory to the log
 	// files.
-	LogLink string
+	LogLinkDir string
 
-	// MaxSize is the maximum size of a log file in bytes. Header and footer
-	// messages are not accounted in this so final log file size can be larger
-	// than this limit by a few hundred bytes.
-	MaxSize uint64
+	// LogFileMaxSize is the maximum size of a log file in bytes. Header and
+	// footer messages are not accounted in this so final log file size can be
+	// larger than this limit by a few hundred bytes.
+	LogFileMaxSize uint64
 
 	// BufferSize sizes the buffer associated with each log file. It's large so
 	// that log records can accumulate without the logging thread blocking on
@@ -28,8 +28,9 @@ type Options struct {
 	// messsages to the file.
 	FlushTimeout time.Duration
 
-	// LogBufLevel is the log level (and below) to buffer log messages.
-	LogBufLevel slog.Level
+	// BufferedLogLevel is the log level (and below) which to buffer log
+	// messages. Log messages above this are flushed immediately.
+	BufferedLogLevel slog.Level
 
 	// Log levels enabled for logging.
 	Levels []slog.Level
@@ -45,9 +46,9 @@ type Options struct {
 	// it doesn't cross the maximum log file size.
 	ReuseFileDuration time.Duration
 
-	// MaxLogMessageLen is the limit on length of a formatted log message, including
-	// the standard line prefix and trailing newline.
-	MaxLogMessageLen int
+	// LogMessageMaxLen is the limit on length of a formatted log message,
+	// including the standard line prefix and trailing newline.
+	LogMessageMaxLen int
 }
 
 func (v *Options) setDefaults() {
@@ -56,14 +57,14 @@ func (v *Options) setDefaults() {
 	} else {
 		v.LogDirs = append(v.LogDirs, os.TempDir())
 	}
-	if v.MaxSize == 0 {
-		v.MaxSize = 1024 * 1024 * 1800
+	if v.LogFileMaxSize == 0 {
+		v.LogFileMaxSize = 1024 * 1024 * 1800
 	}
 	if v.BufferSize == 0 {
 		v.BufferSize = 256 * 1024
 	}
 	if len(v.Levels) == 0 {
-		v.Levels = []slog.Level{slog.LevelInfo, slog.LevelWarn, slog.LevelError}
+		v.Levels = []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError}
 	}
 	if v.FlushTimeout == 0 {
 		v.FlushTimeout = 30 * time.Second
@@ -74,7 +75,7 @@ func (v *Options) setDefaults() {
 	if v.ReuseFileDuration == 0 {
 		v.ReuseFileDuration = 16 * time.Hour
 	}
-	if v.MaxLogMessageLen == 0 {
-		v.MaxLogMessageLen = 15000
+	if v.LogMessageMaxLen == 0 {
+		v.LogMessageMaxLen = 15000
 	}
 }

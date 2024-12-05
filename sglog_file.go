@@ -71,26 +71,26 @@ func shortHostname(hostname string) string {
 }
 
 type levelFile struct {
-	opts *Options
+	backend *Backend
 
 	level slog.Level
-	file  *os.File
-	bio   *bufio.Writer
 
+	file   *os.File
+	bio    *bufio.Writer
 	nbytes uint64
 
 	names []string
 }
 
-func newLevelFile(opts *Options, level slog.Level) *levelFile {
+func (v *Backend) newLevelFile(opts *Options, level slog.Level) *levelFile {
 	return &levelFile{
-		opts:  opts,
-		level: level,
+		backend: v,
+		level:   level,
 	}
 }
 
 func (f *levelFile) Write(p []byte) (n int, err error) {
-	if f.file == nil || f.nbytes >= f.opts.MaxSize {
+	if f.file == nil || f.nbytes >= f.backend.opts.LogFileMaxSize {
 		if err := f.rotateFile(time.Now()); err != nil {
 			return 0, err
 		}
@@ -105,6 +105,9 @@ func (f *levelFile) Sync() error {
 }
 
 func (f *levelFile) Flush() error {
+	if f.bio == nil {
+		return nil
+	}
 	return f.bio.Flush()
 }
 
@@ -133,17 +136,17 @@ func (f *levelFile) linkName(t time.Time) string {
 
 func (f *levelFile) filePath(dir string, t time.Time) (string, uint64, error) {
 	var fpaths []string
-	for d := time.Second; d < f.opts.ReuseFileDuration; d = d * 2 {
+	for d := time.Second; d < f.backend.opts.ReuseFileDuration; d = d * 2 {
 		fpath := filepath.Join(dir, f.fileName(t.Truncate(d)))
 		fpaths = append(fpaths, fpath)
 	}
-	final := filepath.Join(dir, f.fileName(t.Truncate(f.opts.ReuseFileDuration)))
+	final := filepath.Join(dir, f.fileName(t.Truncate(f.backend.opts.ReuseFileDuration)))
 	fpaths = append(fpaths, final)
 
 	for i := 1; i < len(fpaths); i++ {
 		fstat, err := os.Stat(fpaths[i])
 		if err == nil {
-			if fsize := uint64(fstat.Size()); fsize < f.opts.MaxSize {
+			if fsize := uint64(fstat.Size()); fsize < f.backend.opts.LogFileMaxSize {
 				return fpaths[i], fsize, nil
 			}
 			return fpaths[i-1], 0, nil
@@ -159,14 +162,14 @@ func (f *levelFile) createFile(t time.Time) (fp *os.File, filename string, err e
 	link := f.linkName(t)
 
 	var lastErr error
-	for _, dir := range f.opts.LogDirs {
+	for _, dir := range f.backend.opts.LogDirs {
 		fpath, fsize, err := f.filePath(dir, t)
 		if err != nil {
 			lastErr = err
 			continue
 		}
 		flags := os.O_WRONLY | os.O_CREATE
-		fp, err := os.OpenFile(fpath, flags, f.opts.LogFileMode)
+		fp, err := os.OpenFile(fpath, flags, f.backend.opts.LogFileMode)
 		if err != nil {
 			lastErr = err
 			continue
@@ -183,8 +186,8 @@ func (f *levelFile) createFile(t time.Time) (fp *os.File, filename string, err e
 			symlink := filepath.Join(dir, link)
 			os.Remove(symlink)         // ignore err
 			os.Symlink(fname, symlink) // ignore err
-			if f.opts.LogLink != "" {
-				lsymlink := filepath.Join(f.opts.LogLink, link)
+			if f.backend.opts.LogLinkDir != "" {
+				lsymlink := filepath.Join(f.backend.opts.LogLinkDir, link)
 				os.Remove(lsymlink)         // ignore err
 				os.Symlink(fname, lsymlink) // ignore err
 			}
@@ -217,9 +220,9 @@ func (f *levelFile) rotateFile(now time.Time) error {
 
 	f.file = file
 	f.names = append(f.names, name)
-	f.bio = bufio.NewWriterSize(f.file, f.opts.BufferSize)
+	f.bio = bufio.NewWriterSize(f.file, f.backend.opts.BufferSize)
 
-	if f.opts.LogFileHeader {
+	if f.backend.opts.LogFileHeader {
 		// Write header.
 		var buf bytes.Buffer
 		fmt.Fprintf(&buf, "Log file created at: %s\n", now.Format("2006/01/02 15:04:05"))
