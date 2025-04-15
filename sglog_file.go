@@ -19,10 +19,10 @@
 package sglog
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -76,7 +76,6 @@ type levelFile struct {
 	level slog.Level
 
 	file   *os.File
-	bio    *bufio.Writer
 	nbytes uint64
 
 	names []string
@@ -89,26 +88,31 @@ func (v *Backend) newLevelFile(opts *Options, level slog.Level) *levelFile {
 	}
 }
 
-func (f *levelFile) Write(p []byte) (n int, err error) {
+func (f *levelFile) Write(p []byte) (int, error) {
 	if f.file == nil || f.nbytes >= f.backend.opts.LogFileMaxSize {
 		if err := f.rotateFile(time.Now()); err != nil {
-			return 0, err
+			return 0, fmt.Errorf("could not create/rotate log file: %w", err)
 		}
 	}
-	n, err = f.bio.Write(p)
-	f.nbytes += uint64(n)
-	return n, err
+
+	for nwrote := 0; nwrote < len(p); {
+		n, err := f.file.Write(p)
+		nwrote += n
+		f.nbytes += uint64(n)
+
+		if err != nil {
+			if errors.Is(err, io.ErrShortWrite) {
+				continue
+			}
+			return nwrote, err
+		}
+	}
+
+	return len(p), nil
 }
 
 func (f *levelFile) Sync() error {
 	return f.file.Sync()
-}
-
-func (f *levelFile) Flush() error {
-	if f.bio == nil {
-		return nil
-	}
-	return f.bio.Flush()
 }
 
 func (f *levelFile) levelName() string {
@@ -176,7 +180,9 @@ func (f *levelFile) createFile(t time.Time) (fp *os.File, filename string, err e
 		}
 		if _, err := fp.Seek(0, os.SEEK_END); err != nil {
 			lastErr = err
-			fp.Close()
+			if err := fp.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "could not close file (ignored): %v\n", err)
+			}
 			continue
 		}
 		f.nbytes = uint64(fsize)
@@ -184,12 +190,21 @@ func (f *levelFile) createFile(t time.Time) (fp *os.File, filename string, err e
 		{
 			fname := filepath.Base(fpath)
 			symlink := filepath.Join(dir, link)
-			os.Remove(symlink)         // ignore err
-			os.Symlink(fname, symlink) // ignore err
+			if err := os.Remove(symlink); err != nil && !errors.Is(err, os.ErrNotExist) {
+				fmt.Fprintf(os.Stderr, "could not remove symlink %q (ignored): %v\n", symlink, err)
+			}
+			if err := os.Symlink(fname, symlink); err != nil {
+				fmt.Fprintf(os.Stderr, "could not create symlink %q->%q (ignored): %v\n", symlink, fname, err)
+			}
+
 			if f.backend.opts.LogLinkDir != "" {
 				lsymlink := filepath.Join(f.backend.opts.LogLinkDir, link)
-				os.Remove(lsymlink)         // ignore err
-				os.Symlink(fname, lsymlink) // ignore err
+				if err := os.Remove(lsymlink); err != nil && !errors.Is(err, os.ErrNotExist) {
+					fmt.Fprintf(os.Stderr, "could not remove symlink %q (ignored): %v\n", lsymlink, err)
+				}
+				if err := os.Symlink(fname, lsymlink); err != nil {
+					fmt.Fprintf(os.Stderr, "could not create symlink %q->%q (ignroed): %v\n", lsymlink, fname, err)
+				}
 			}
 		}
 		return fp, fpath, nil
@@ -198,10 +213,6 @@ func (f *levelFile) createFile(t time.Time) (fp *os.File, filename string, err e
 }
 
 func (f *levelFile) rotateFile(now time.Time) error {
-	if f.bio != nil {
-		f.bio.Flush()
-	}
-
 	var err error
 	pn := "<none>"
 	file, name, err := f.createFile(now)
@@ -210,17 +221,16 @@ func (f *levelFile) rotateFile(now time.Time) error {
 	}
 
 	if f.file != nil {
-		// The current log file becomes the previous log at the end of
-		// this block, so save its name for use in the header of the next
-		// file.
+		// The current log file becomes the previous log at the end of this block,
+		// so save its name for use in the header of the next file.
 		pn = f.file.Name()
-		f.bio.Flush()
-		f.file.Close()
+		if err := f.file.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "could not close file (ignored): %v", err)
+		}
 	}
 
 	f.file = file
 	f.names = append(f.names, name)
-	f.bio = bufio.NewWriterSize(f.file, f.backend.opts.BufferSize)
 
 	if f.backend.opts.LogFileHeader {
 		// Write header.
@@ -230,10 +240,8 @@ func (f *levelFile) rotateFile(now time.Time) error {
 		fmt.Fprintf(&buf, "Binary: Built with %s %s for %s/%s\n", runtime.Compiler, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 		fmt.Fprintf(&buf, "Previous log: %s\n", pn)
 		fmt.Fprintf(&buf, "Log line format: [IWEF]mmdd hh:mm:ss.uuuuuu threadid file:line] msg\n")
-		n, err := f.file.Write(buf.Bytes())
-		f.nbytes += uint64(n)
-		if err != nil {
-			return err
+		if _, err := f.Write(buf.Bytes()); err != nil {
+			return fmt.Errorf("could not write log file header: %w", err)
 		}
 	}
 	return nil

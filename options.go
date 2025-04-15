@@ -61,7 +61,7 @@ func (v *Options) setDefaults() {
 		v.LogFileMaxSize = 1024 * 1024 * 1800
 	}
 	if v.BufferSize == 0 {
-		v.BufferSize = 256 * 1024
+		v.BufferSize = 1024 * 1024
 	}
 	if len(v.Levels) == 0 {
 		v.Levels = []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError}

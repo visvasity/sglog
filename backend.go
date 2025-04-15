@@ -1,9 +1,10 @@
 package sglog
 
 import (
+	"fmt"
 	"log/slog"
+	"os"
 	"sync"
-	"time"
 )
 
 type Backend struct {
@@ -16,8 +17,6 @@ type Backend struct {
 
 	fileMap map[slog.Level]*levelFile
 
-	flushChan chan slog.Level
-
 	currentLevel slog.LevelVar
 }
 
@@ -25,24 +24,19 @@ type Backend struct {
 func NewBackend(opts *Options) *Backend {
 	opts.setDefaults()
 	v := &Backend{
-		opts:      opts,
-		fileMap:   make(map[slog.Level]*levelFile),
-		flushChan: make(chan slog.Level, 1),
+		opts:    opts,
+		fileMap: make(map[slog.Level]*levelFile),
 	}
 	v.handler = v.newHandler(opts)
 
 	for _, l := range v.opts.Levels {
 		v.fileMap[l] = v.newLevelFile(v.opts, l)
 	}
-
-	v.wg.Add(1)
-	go v.flushDaemon()
 	return v
 }
 
 // Close flushes the logs and waits for the background goroutine to finish.
 func (v *Backend) Close() {
-	close(v.flushChan)
 	v.wg.Wait()
 }
 
@@ -86,76 +80,22 @@ func (v *Backend) emit(level slog.Level, msg []byte) error {
 		if l < v.currentLevel.Level() {
 			continue
 		}
-
-		if l <= level {
-			if _, err := f.Write(msg); err != nil && firstErr == nil {
-				firstErr = err
-			}
+		if l > level {
+			continue
+		}
+		if _, err := f.Write(msg); err != nil && firstErr == nil {
+			firstErr = err
 		}
 	}
 	v.mu.Unlock()
 
-	// Log messages above the LogBufLevel are flushed immediately. FIXME: we
-	// should not miss the log level.
-	if level > v.opts.BufferedLogLevel {
-		select {
-		case v.flushChan <- level:
-		default:
-		}
+	if firstErr != nil {
+		fmt.Fprintf(os.Stderr, "could not emit log message for level %d: %v\n", level, firstErr)
 	}
-
 	return firstErr
 }
 
 // Flush force writes log messages to the log files.
 func (v *Backend) Flush() error {
-	return v.flush(slog.LevelDebug)
-}
-
-func (v *Backend) flush(level slog.Level) error {
-	var firstErr error
-	updateErr := func(err error) {
-		if err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-
-	// Remember where we flushed, so we can call sync without holding
-	// the lock.
-	var files []*levelFile
-
-	func() {
-		// Flush from fatal down, in case there's trouble flushing.
-		for l, lf := range v.fileMap {
-			if l >= level {
-				updateErr(lf.Flush())
-				files = append(files, lf)
-			}
-		}
-	}()
-
-	for _, file := range files {
-		updateErr(file.Sync())
-	}
-	return firstErr
-}
-
-func (v *Backend) flushDaemon() {
-	defer v.wg.Done()
-
-	tick := time.NewTicker(v.opts.FlushTimeout)
-	defer tick.Stop()
-
-	for {
-		select {
-		case <-tick.C:
-			v.flush(slog.LevelDebug)
-
-		case sev, ok := <-v.flushChan:
-			if !ok {
-				return
-			}
-			v.flush(sev)
-		}
-	}
+	return nil // v.flush(slog.LevelDebug)
 }
