@@ -81,7 +81,7 @@ type levelFile struct {
 	names []string
 }
 
-func (v *Backend) newLevelFile(opts *Options, level slog.Level) *levelFile {
+func (v *Backend) newLevelFile(level slog.Level) *levelFile {
 	return &levelFile{
 		backend: v,
 		level:   level,
@@ -140,11 +140,11 @@ func (f *levelFile) linkName(t time.Time) string {
 
 func (f *levelFile) filePath(dir string, t time.Time) (string, uint64, error) {
 	var fpaths []string
-	for d := time.Second; d < f.backend.opts.ReuseFileDuration; d = d * 2 {
+	for d := time.Second; d < f.backend.opts.LogFileReuseDuration; d = d * 2 {
 		fpath := filepath.Join(dir, f.fileName(t.Truncate(d)))
 		fpaths = append(fpaths, fpath)
 	}
-	final := filepath.Join(dir, f.fileName(t.Truncate(f.backend.opts.ReuseFileDuration)))
+	final := filepath.Join(dir, f.fileName(t.Truncate(f.backend.opts.LogFileReuseDuration)))
 	fpaths = append(fpaths, final)
 
 	for i := 1; i < len(fpaths); i++ {

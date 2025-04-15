@@ -30,7 +30,7 @@ func NewBackend(opts *Options) *Backend {
 	v.handler = v.newHandler(opts)
 
 	for _, l := range v.opts.Levels {
-		v.fileMap[l] = v.newLevelFile(v.opts, l)
+		v.fileMap[l] = v.newLevelFile(l)
 	}
 	return v
 }
