@@ -6,18 +6,17 @@
 //
 // # DIFFERENCES
 //
-//   - The standard log/slog package doesn't define Fatal level and log.Fatalf
-//     is treated as LevelInfo, so FATAL log files are not supported by this
-//     package.
+//   - The standard log/slog package doesn't define Fatal level, so FATAL
+//     messages and log files are not supported by this package.
 //
-//   - Globally defined flags are replaced with an Options structure.
+//   - Most of the global flags from glog package are replaced with an Options structure.
 //
-//   - Thread-ID field in the log file names is always set to zero to enable
-//     log file reuse across restarts. Thread-ID is still included in the
-//     individual log messages, even though it is not very useful in Go.
+//   - Thread-ID field in the log file names is always set to zero (to enable
+//     log file reuse across restarts). Thread-ID is still included in the
+//     individual log messages.
 //
 //   - Google's glog package adds a footer message when a log file is rotated,
-//     which is not supported in this package.
+//     which is not supported.
 //
 //   - When the log file reuse feature is enabled, log file names do not
 //     exactly match the log file creation time. However, timestamps in the log
