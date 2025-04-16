@@ -1,53 +1,46 @@
-// Package sglog provides a log/slog logging handler that writes to multiple
-// log files based on the log severity -- similar to the Google's glog package.
+// Package sglog provides a logging handler for the log/slog package that writes
+// log messages to multiple files based on their severity, similar to Google's
+// glog package.
 //
-// Most of the code is copied from the Google's glog package for Go. However,
-// there are many differences and some new features, like log file reuse, etc.
+// This package is inspired by Google's glog package for Go but introduces
+// several differences and new features, such as log file reuse. Most of the
+// code is adapted from glog, with modifications to support the slog ecosystem
+// and additional functionality.
 //
-// # DIFFERENCES
+// # Differences from Google's glog
 //
-//   - Log messages are *not* bufferred inline with the application control flow.
+//   - Log messages are not buffered inline with the application control flow.
+//   - The standard log/slog package does not define a Fatal level, so FATAL
+//     messages and log files are not supported.
+//   - Global flags from glog are replaced with an Options struct for configuration.
+//   - The thread-ID in log file names is always set to zero to enable log file
+//     reuse across process restarts. The thread-ID is still included in individual
+//     log messages.
+//   - Unlike glog, this package does not add a footer message when rotating log files.
+//   - When log file reuse is enabled, log file names may not precisely reflect
+//     the log file creation time, though timestamps in file names remain in
+//     chronological order.
 //
-//   - The standard log/slog package doesn't define Fatal level, so FATAL
-//     messages and log files are not supported by this package.
+// # Log File Reuse
 //
-//   - Most of the global flags from glog package are replaced with an Options structure.
+// Google's glog creates a new log file each time a process restarts, which can
+// exhaust filesystem inodes if the process crashes repeatedly. The sglog package
+// mitigates this by enabling log file reuse with a configurable timeout (e.g.,
+// one log file per hour). To support this, the thread-ID in log file names is
+// replaced with zero.
 //
-//   - Thread-ID field in the log file names is always set to zero (to enable
-//     log file reuse across restarts). Thread-ID is still included in the
-//     individual log messages.
+// Log files are still rotated when they reach the configured maximum size limit.
 //
-//   - Google's glog package adds a footer message when a log file is rotated,
-//     which is not supported.
+// # VModule Usage
 //
-//   - When the log file reuse feature is enabled, log file names do not
-//     exactly match the log file creation time. However, timestamps in the log
-//     file names still follow the sorted order.
+// In addition to log levels, logging can be selectively enabled or disabled
+// using vmodule attributes, similar to glog's vmodule feature. Users must define
+// a reusable attribute for each module (typically at global scope) and use it
+// with the slog.With function to log module-specific messages.
 //
-// # LOG FILE REUSE
-//
-// Google's glog package creates a new log file every time the process is
-// restarted. This can exhaust filesystem inodes if the process is crashing
-// repeatedly.
-//
-// This package changes the above behavior and enables log file reuse with a
-// certain timeout (ex: maximum one log file per hour.) As part of this,
-// thread-id field in the log file name is replaced with a zero.
-//
-// Note that log file is still rotated when the file size reaches up to the
-// maximum limit.
-//
-// # VMODULE USAGE
-//
-// In addition to the log levels, logging can also be enabled/disabled
-// selectively using vmodule attributes. This is somewhat similar to glog
-// package's vmodule feature.
-//
-// Users are required to create a reusable attribute (typically at global
-// scope) for each module and use `slog.With` function to log module specific
-// log messages.
+// Example:
 //
 //	var network = sglog.VModule("network", slog.LevelDebug)
 //	...
-//	slog.With(network).Info(...)
+//	slog.With(network).Info("Network event", ...)
 package sglog

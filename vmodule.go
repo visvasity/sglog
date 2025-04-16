@@ -13,10 +13,13 @@ func (v *vmoduleValue) LogValue() slog.Value {
 	return v.name
 }
 
-// VModule creates a verbosity as a slog.Attr, which when present with a
-// slog.Logger, controls the verbosity of the module specific log message as
-// per it's current log level. Users can change a module's log level
-// dynamically without effecting other module's log level.
+// VModule creates a module log level control attribute.
+//
+// VModule attributes contain a private log level that can be used to turn
+// on/off debug logging level for log messages related to a module.
+//
+// Users can change a module's log level dynamically without effecting other
+// module's log level.
 func VModule(name string, level slog.Level) slog.Attr {
 	value := &vmoduleValue{
 		name: slog.StringValue(name),
