@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -62,9 +63,21 @@ func (h *slogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return h.withGroupOrAttrs(groupOrAttrs{attrs: attrs})
 }
 
+func (h *slogHandler) minLevel() slog.Level {
+	level := h.backend.currentLevel.Level()
+	for _, goa := range h.goas {
+		for _, attr := range goa.attrs {
+			if current, ok := VModuleLevel(attr); ok {
+				level = min(level, current)
+			}
+		}
+	}
+	return level
+}
+
 // Enabled implements the Enabled method for slog.Handler interface.
 func (h *slogHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return level >= h.backend.currentLevel.Level()
+	return level >= h.minLevel()
 }
 
 // Handle implements the Handle method for slog.Handler interface.
@@ -81,7 +94,7 @@ func (h *slogHandler) Handle(ctx context.Context, r slog.Record) error {
 	defer bufs.Put(bufi)
 
 	h.format(ctx, buf, r)
-	return h.backend.emit(r.Level, buf.Bytes())
+	return h.backend.emit(h.minLevel(), r.Level, buf.Bytes())
 }
 
 // bufs is a pool of *bytes.Buffer used in formatting log entries.
@@ -145,7 +158,7 @@ func (h *slogHandler) format(ctx context.Context, buf *bytes.Buffer, r slog.Reco
 	}
 	buf.WriteString("] ")
 
-	fmt.Fprintf(buf, r.Message)
+	buf.WriteString(r.Message)
 
 	// Handle state from WithGroup and WithAttrs.
 	goas := h.goas
@@ -177,7 +190,7 @@ func (h *slogHandler) format(ctx context.Context, buf *bytes.Buffer, r slog.Reco
 	if b := buf.Bytes(); b[len(b)-1] != '\n' {
 		buf.WriteByte('\n')
 	}
-	// fmt.Fprintf(os.Stderr, "%s", buf.Bytes())
+	fmt.Fprintf(os.Stderr, "%s", buf.Bytes())
 }
 
 const digits = "0123456789"

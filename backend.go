@@ -71,16 +71,11 @@ func normalize(v slog.Level) slog.Level {
 	return slog.LevelDebug
 }
 
-func (v *Backend) emit(level slog.Level, msg []byte) error {
-	level = normalize(level)
-
+func (v *Backend) emit(minLevel, maxLevel slog.Level, msg []byte) error {
 	v.mu.Lock()
 	var firstErr error
 	for l, f := range v.fileMap {
-		if l < v.currentLevel.Level() {
-			continue
-		}
-		if l > level {
+		if l < minLevel || l > maxLevel {
 			continue
 		}
 		if _, err := f.Write(msg); err != nil && firstErr == nil {
@@ -90,7 +85,7 @@ func (v *Backend) emit(level slog.Level, msg []byte) error {
 	v.mu.Unlock()
 
 	if firstErr != nil {
-		fmt.Fprintf(os.Stderr, "could not emit log message for level %d: %v\n", level, firstErr)
+		fmt.Fprintf(os.Stderr, "could not emit log message for levels %d-%d: %v\n", minLevel, maxLevel, firstErr)
 	}
 	return firstErr
 }

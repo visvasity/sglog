@@ -2,7 +2,7 @@
 // log files based on the log severity -- similar to the Google's glog package.
 //
 // Most of the code is copied from the Google's glog package for Go. However,
-// there are some differences and a new log file reuse feature.
+// there are many differences and some new features, like log file reuse, etc.
 //
 // # DIFFERENCES
 //
@@ -35,4 +35,18 @@
 //
 // Note that log file is still rotated when the file size reaches up to the
 // maximum limit.
+//
+// # VMODULE USAGE
+//
+// In addition to the log levels, logging can also be enabled/disabled
+// selectively using vmodule attributes. This is somewhat similar to glog
+// package's vmodule feature.
+//
+// Users are required to create a reusable attribute (typically at global
+// scope) for each module and use `slog.With` function to log module specific
+// log messages.
+//
+//	var network = sglog.VModule("network", slog.LevelDebug)
+//	...
+//	slog.With(network).Info(...)
 package sglog
