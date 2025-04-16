@@ -6,6 +6,8 @@
 //
 // # DIFFERENCES
 //
+//   - Log messages are *not* bufferred inline with the application control flow.
+//
 //   - The standard log/slog package doesn't define Fatal level, so FATAL
 //     messages and log files are not supported by this package.
 //

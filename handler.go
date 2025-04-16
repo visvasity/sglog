@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -190,7 +189,7 @@ func (h *slogHandler) format(ctx context.Context, buf *bytes.Buffer, r slog.Reco
 	if b := buf.Bytes(); b[len(b)-1] != '\n' {
 		buf.WriteByte('\n')
 	}
-	fmt.Fprintf(os.Stderr, "%s", buf.Bytes())
+	// fmt.Fprintf(os.Stderr, "%s", buf.Bytes())
 }
 
 const digits = "0123456789"

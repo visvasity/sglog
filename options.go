@@ -1,13 +1,12 @@
 package sglog
 
 import (
-	"log/slog"
 	"os"
 	"time"
 )
 
 type Options struct {
-	// LogDirs if non-empty write log files in this directory.
+	// LogDirs if non-empty create/write log files in one of these directories.
 	LogDirs []string
 
 	// LogLinkDir if non-empty, adds symbolic links in this directory to the log
@@ -19,22 +18,6 @@ type Options struct {
 	// larger than this limit by a few hundred bytes.
 	LogFileMaxSize uint64
 
-	// BufferSize sizes the buffer associated with each log file. It's large so
-	// that log records can accumulate without the logging thread blocking on
-	// disk I/O. The flushDaemon will block instead.
-	BufferSize int
-
-	// FlushTimeout is the maximum buffering time interval before writing
-	// messsages to the file.
-	FlushTimeout time.Duration
-
-	// BufferedLogLevel is the log level (and below) which to buffer log
-	// messages. Log messages above this are flushed immediately.
-	BufferedLogLevel slog.Level
-
-	// Log levels enabled for logging.
-	Levels []slog.Level
-
 	// LogFileMode is the log file mode/permissions.
 	LogFileMode os.FileMode
 
@@ -42,12 +25,13 @@ type Options struct {
 	// file.
 	LogFileHeader bool
 
-	// LogFileReuseDuration maximum duration to reuse the last log file as long
-	// as it doesn't cross the maximum log file size.
+	// LogFileReuseDuration is the maximum duration to reuse/reopen an existing
+	// log file as long as it doesn't cross the maximum log file size.
 	LogFileReuseDuration time.Duration
 
 	// LogMessageMaxLen is the limit on length of a formatted log message,
-	// including the standard line prefix and trailing newline.
+	// including the standard line prefix and trailing newline. Messages longer
+	// than this value are truncated.
 	LogMessageMaxLen int
 }
 
@@ -59,15 +43,6 @@ func (v *Options) setDefaults() {
 	}
 	if v.LogFileMaxSize == 0 {
 		v.LogFileMaxSize = 1024 * 1024 * 1800
-	}
-	if v.BufferSize == 0 {
-		v.BufferSize = 1024 * 1024
-	}
-	if len(v.Levels) == 0 {
-		v.Levels = []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError}
-	}
-	if v.FlushTimeout == 0 {
-		v.FlushTimeout = 30 * time.Second
 	}
 	if v.LogFileMode == 0 {
 		v.LogFileMode = 0644

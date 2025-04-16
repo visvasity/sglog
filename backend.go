@@ -9,7 +9,6 @@ import (
 
 type Backend struct {
 	mu sync.Mutex
-	wg sync.WaitGroup
 
 	opts *Options
 
@@ -29,7 +28,8 @@ func NewBackend(opts *Options) *Backend {
 	}
 	v.handler = v.newHandler(opts)
 
-	for _, l := range v.opts.Levels {
+	levels := []slog.Level{slog.LevelDebug, slog.LevelInfo, slog.LevelWarn, slog.LevelError}
+	for _, l := range levels {
 		v.fileMap[l] = v.newLevelFile(l)
 	}
 	return v
@@ -37,7 +37,7 @@ func NewBackend(opts *Options) *Backend {
 
 // Close flushes the logs and waits for the background goroutine to finish.
 func (v *Backend) Close() {
-	v.wg.Wait()
+	return
 }
 
 // Handler returns slog.Handler for the log backend.
@@ -85,9 +85,4 @@ func (v *Backend) emit(minLevel, maxLevel slog.Level, msg []byte) error {
 		fmt.Fprintf(os.Stderr, "could not emit log message for levels %d-%d: %v\n", minLevel, maxLevel, firstErr)
 	}
 	return firstErr
-}
-
-// Flush force writes log messages to the log files.
-func (v *Backend) Flush() error {
-	return nil // v.flush(slog.LevelDebug)
 }

@@ -14,7 +14,7 @@ func TestVModuleLogging(t *testing.T) {
 		LogFileMaxSize: 5 * 1024 * 1024,
 		LogDirs:        []string{"/tmp", t.TempDir()},
 	})
-	defer backend.Flush()
+	defer backend.Close()
 
 	slog.SetDefault(slog.New(backend.Handler()))
 
