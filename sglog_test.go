@@ -22,10 +22,10 @@ func TestBasic(t *testing.T) {
 	slog.Error("error message", "key", "value", "one", 1)
 
 	slog.Debug("debug message before EnableDebugLog")
-	backend.EnableDebugLog()
+	backend.SetLevel(slog.LevelDebug)
 	slog.Debug("debug message after EnableDebugLog")
 	slog.Info("info message after EnableDebugLog")
-	backend.DisableDebugLog()
+	backend.SetLevel(0)
 	slog.Debug("debug message after DisableDebugLog")
 	slog.Info("info message after DisableDebugLog")
 
@@ -52,10 +52,10 @@ func TestLogFileRotation(t *testing.T) {
 		slog.Error("error message", "key", "value", "iteration", i)
 
 		slog.Debug("debug message before EnableDebugLog", "iteration", i)
-		backend.EnableDebugLog()
+		backend.SetLevel(slog.LevelDebug)
 		slog.Debug("debug message after EnableDebugLog", "iteration", i)
 		slog.Info("info message after EnableDebugLog", "iteration", i)
-		backend.DisableDebugLog()
+		backend.SetLevel(slog.LevelInfo)
 		slog.Debug("debug message after DisableDebugLog", "iteration", i)
 		slog.Info("info message after DisableDebugLog", "iteration", i)
 

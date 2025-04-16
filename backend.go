@@ -45,14 +45,11 @@ func (v *Backend) Handler() slog.Handler {
 	return v.handler
 }
 
-// EnableDebugLog enables logging for slog.LevelDebug messages.
-func (v *Backend) EnableDebugLog() {
-	v.currentLevel.Set(slog.LevelDebug)
-}
-
-// DisableDebugLog disables logging for slog.LevelDebug messages.
-func (v *Backend) DisableDebugLog() {
-	v.currentLevel.Set(slog.LevelInfo)
+// SetLevel updates the default log level.
+func (v *Backend) SetLevel(level slog.Level) slog.Level {
+	last := v.currentLevel.Level()
+	v.currentLevel.Set(level)
+	return last
 }
 
 func normalize(v slog.Level) slog.Level {
