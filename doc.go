@@ -13,9 +13,6 @@
 //   - The standard log/slog package does not define a Fatal level, so FATAL
 //     messages and log files are not supported.
 //   - Global flags from glog are replaced with an Options struct for configuration.
-//   - The thread-ID in log file names is always set to zero to enable log file
-//     reuse across process restarts. The thread-ID is still included in individual
-//     log messages.
 //   - Unlike glog, this package does not add a footer message when rotating log files.
 //   - When log file reuse is enabled, log file names may not precisely reflect
 //     the log file creation time, though timestamps in file names remain in
@@ -26,8 +23,7 @@
 // Google's glog creates a new log file each time a process restarts, which can
 // exhaust filesystem inodes if the process crashes repeatedly. The sglog package
 // mitigates this by enabling log file reuse with a configurable timeout (e.g.,
-// one log file per hour). To support this, the thread-ID in log file names is
-// replaced with zero.
+// one log file per hour).
 //
 // Log files are still rotated when they reach the configured maximum size limit.
 //

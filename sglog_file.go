@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -75,16 +74,19 @@ type levelFile struct {
 
 	level slog.Level
 
+	filePrefix string
+
 	file   *os.File
 	nbytes uint64
 
-	names []string
+	fpaths []string
 }
 
 func (v *Backend) newLevelFile(level slog.Level) *levelFile {
 	return &levelFile{
-		backend: v,
-		level:   level,
+		backend:    v,
+		level:      level,
+		filePrefix: fmt.Sprintf("%s.%s.%s.log.%s", program, host, userName, level.String()),
 	}
 }
 
@@ -120,46 +122,78 @@ func (f *levelFile) levelName() string {
 }
 
 func (f *levelFile) fileName(t time.Time) string {
-	return fmt.Sprintf("%s.%s.%s.log.%s.%04d%02d%02d-%02d%02d%02d.%d",
-		program,
-		host,
-		userName,
-		f.levelName(),
-		t.Year(),
-		t.Month(),
-		t.Day(),
-		t.Hour(),
-		t.Minute(),
-		t.Second(),
-		0 /* zero pid in the filename */)
+	return f.filePrefix + t.Format(".20060102-150405.") + fmt.Sprintf("%d", pid)
+}
+
+func (f *levelFile) fileTime(name string) (ts time.Time, err error) {
+	if !strings.HasPrefix(name, f.filePrefix) {
+		return ts, os.ErrInvalid
+	}
+	fs := strings.Split(name, ".")
+	if len(fs) != 7 {
+		return ts, os.ErrInvalid
+	}
+	return time.ParseInLocation("20060102-150405", fs[5], time.Local)
 }
 
 func (f *levelFile) linkName(t time.Time) string {
 	return program + "." + f.levelName()
 }
 
-func (f *levelFile) filePath(dir string, t time.Time) (string, uint64, error) {
-	var fpaths []string
-	for d := time.Second; d < f.backend.opts.LogFileReuseDuration; d = d * 2 {
-		fpath := filepath.Join(dir, f.fileName(t.Truncate(d)))
-		fpaths = append(fpaths, fpath)
+func (f *levelFile) lastFileName(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
 	}
-	final := filepath.Join(dir, f.fileName(t.Truncate(f.backend.opts.LogFileReuseDuration)))
-	fpaths = append(fpaths, final)
 
-	for i := 1; i < len(fpaths); i++ {
-		fstat, err := os.Stat(fpaths[i])
-		if err == nil {
-			if fsize := uint64(fstat.Size()); fsize < f.backend.opts.LogFileMaxSize {
-				return fpaths[i], fsize, nil
-			}
-			return fpaths[i-1], 0, nil
+	var lastName string
+	var maxTime time.Time
+	for _, entry := range entries {
+		t, err := f.fileTime(entry.Name())
+		if err != nil {
+			continue
 		}
-		if !errors.Is(err, fs.ErrNotExist) {
+		if t.After(maxTime) {
+			lastName = entry.Name()
+			maxTime = t
+		}
+	}
+	if lastName == "" {
+		return "", nil
+	}
+
+	return lastName, nil
+}
+
+func (f *levelFile) filePath(dir string, t time.Time) (string, int64, error) {
+	if len(f.fpaths) == 0 {
+		lastName, err := f.lastFileName(dir)
+		if err != nil {
 			return "", 0, err
 		}
+
+		if lastName != "" {
+			lastFileTime, err := f.fileTime(lastName)
+			if err != nil {
+				return "", 0, err
+			}
+
+			if lastFileTime.After(t.Truncate(f.backend.opts.LogFileReuseDuration)) {
+				lastPath := filepath.Join(dir, lastName)
+				fstat, err := os.Stat(lastPath)
+				if err != nil {
+					return "", 0, err
+				}
+
+				if size := fstat.Size(); uint64(size) < f.backend.opts.LogFileMaxSize {
+					return lastPath, size, nil
+				}
+			}
+		}
 	}
-	return final, 0, nil
+
+	fpath := filepath.Join(dir, f.fileName(t))
+	return fpath, 0, nil
 }
 
 func (f *levelFile) createFile(t time.Time) (fp *os.File, filename string, err error) {
@@ -167,25 +201,26 @@ func (f *levelFile) createFile(t time.Time) (fp *os.File, filename string, err e
 
 	var lastErr error
 	for _, dir := range f.backend.opts.LogDirs {
-		fpath, fsize, err := f.filePath(dir, t)
+		fpath, offset, err := f.filePath(dir, t)
 		if err != nil {
 			lastErr = err
 			continue
 		}
+
 		flags := os.O_WRONLY | os.O_CREATE
 		fp, err := os.OpenFile(fpath, flags, f.backend.opts.LogFileMode)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		if _, err := fp.Seek(0, os.SEEK_END); err != nil {
+		if _, err := fp.Seek(offset, io.SeekStart); err != nil {
 			lastErr = err
 			if err := fp.Close(); err != nil {
 				fmt.Fprintf(os.Stderr, "could not close file (ignored): %v\n", err)
 			}
 			continue
 		}
-		f.nbytes = uint64(fsize)
+		f.nbytes = uint64(offset)
 
 		{
 			fname := filepath.Base(fpath)
@@ -215,7 +250,7 @@ func (f *levelFile) createFile(t time.Time) (fp *os.File, filename string, err e
 func (f *levelFile) rotateFile(now time.Time) error {
 	var err error
 	pn := "<none>"
-	file, name, err := f.createFile(now)
+	file, fpath, err := f.createFile(now)
 	if err != nil {
 		return err
 	}
@@ -230,18 +265,33 @@ func (f *levelFile) rotateFile(now time.Time) error {
 	}
 
 	f.file = file
-	f.names = append(f.names, name)
+	f.fpaths = append(f.fpaths, fpath)
 
 	if f.backend.opts.LogFileHeader {
-		// Write header.
-		var buf bytes.Buffer
-		fmt.Fprintf(&buf, "Log file created at: %s\n", now.Format("2006/01/02 15:04:05"))
-		fmt.Fprintf(&buf, "Running on machine: %s\n", host)
-		fmt.Fprintf(&buf, "Binary: Built with %s %s for %s/%s\n", runtime.Compiler, runtime.Version(), runtime.GOOS, runtime.GOARCH)
-		fmt.Fprintf(&buf, "Previous log: %s\n", pn)
-		fmt.Fprintf(&buf, "Log line format: [IWEF]mmdd hh:mm:ss.uuuuuu threadid file:line] msg\n")
-		if _, err := f.Write(buf.Bytes()); err != nil {
-			return fmt.Errorf("could not write log file header: %w", err)
+		if f.nbytes == 0 {
+			// Write header.
+			var buf bytes.Buffer
+			fmt.Fprintf(&buf, "Log file created at: %s\n", now.Format("2006/01/02 15:04:05"))
+			fmt.Fprintf(&buf, "Running on machine: %s\n", host)
+			fmt.Fprintf(&buf, "Binary: Built with %s %s for %s/%s\n", runtime.Compiler, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+			fmt.Fprintf(&buf, "Previous log: %s\n", pn)
+			fmt.Fprintf(&buf, "Log line format: [IWEF]mmdd hh:mm:ss.uuuuuu threadid file:line] msg\n")
+			n, err := f.file.Write(buf.Bytes())
+			f.nbytes += uint64(n)
+			if err != nil {
+				return err
+			}
+		} else {
+			// Write header.
+			var buf bytes.Buffer
+			fmt.Fprintf(&buf, "Log file is reopened at: %s\n", now.Format("2006/01/02 15:04:05"))
+			fmt.Fprintf(&buf, "Running on machine: %s\n", host)
+			fmt.Fprintf(&buf, "Binary: Built with %s %s for %s/%s\n", runtime.Compiler, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+			n, err := f.file.Write(buf.Bytes())
+			f.nbytes += uint64(n)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
