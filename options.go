@@ -6,6 +6,9 @@ import (
 )
 
 type Options struct {
+	// Name holds the program name to use with the log files.
+	Name string
+
 	// LogDirs if non-empty create/write log files in one of these directories.
 	LogDirs []string
 
@@ -36,6 +39,9 @@ type Options struct {
 }
 
 func (v *Options) setDefaults() {
+	if v.Name == "" {
+		v.Name = program
+	}
 	if len(v.LogDirs) == 0 {
 		v.LogDirs = []string{os.TempDir()}
 	} else {

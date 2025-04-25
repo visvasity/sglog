@@ -86,7 +86,7 @@ func (v *Backend) newLevelFile(level slog.Level) *levelFile {
 	return &levelFile{
 		backend:    v,
 		level:      level,
-		filePrefix: fmt.Sprintf("%s.%s.%s.log.%s", program, host, userName, level.String()),
+		filePrefix: fmt.Sprintf("%s.%s.%s.log.%s", v.opts.Name, host, userName, level.String()),
 	}
 }
 
@@ -137,7 +137,7 @@ func (f *levelFile) fileTime(name string) (ts time.Time, err error) {
 }
 
 func (f *levelFile) linkName(t time.Time) string {
-	return program + "." + f.levelName()
+	return f.backend.opts.Name + "." + f.levelName()
 }
 
 func (f *levelFile) lastFileName(dir string) (string, error) {

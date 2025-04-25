@@ -39,6 +39,7 @@ func TestLogFileRotation(t *testing.T) {
 	log.SetFlags(log.Lshortfile)
 
 	backend := NewBackend(&Options{
+		Name:           "testing",
 		LogFileMaxSize: 1024 * 1024,
 		LogDirs:        []string{"."},
 	})
